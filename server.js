@@ -1,38 +1,50 @@
 import express from "express";
+import cors from "cors";
 import axios from "axios";
 import cheerio from "cheerio";
+import dotenv from "dotenv";
 import admin from "firebase-admin";
 
-const app = express();
-app.use(express.json());
+dotenv.config();
 
-// === FIREBASE INIT ===
+// ========================================================
+// 🔥  FIREBASE ADMIN (SERVIDOR)
+// ========================================================
 admin.initializeApp({
-    credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_KEY)),
-    databaseURL: process.env.DB_URL
+    credential: admin.credential.cert({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n")
+    }),
+    databaseURL: process.env.DATABASE_URL
 });
+
 const db = admin.database();
 
-// === Função de codificação temporária ===
-function encode(str) {
-    return Buffer.from(str, "utf8").toString("base64");
+// ========================================================
+// ⏳ ENCODING TEMPORÁRIO (expira automaticamente)
+// ========================================================
+function encodeTemp(str, minutos = 10) {
+    const expires = Date.now() + minutos * 60 * 1000;
+    const payload = `${str}::${expires}`;
+    return Buffer.from(payload, "utf8").toString("base64");
 }
 
-// === Função principal: extrair + codificar ===
-async function scrapeBlog(fullUrl) {
-    const { data } = await axios.get(fullUrl);
+// ========================================================
+// 🔍 Função que faz scraping automático dos vídeos
+// ========================================================
+async function extractVideos(blogUrl) {
+    const { data } = await axios.get(blogUrl);
     const $ = cheerio.load(data);
 
-    let episodes = [];
+    const episodes = [];
 
     $(".post-body iframe").each((i, el) => {
         const video = $(el).attr("src") || "";
-        const encodedVideo = encode(video);
-
         const title = $(el).parent().next("b").text().trim();
-        const descBlock = $(el).parent().nextAll("i").first().parent().html();
 
-        const cleanDesc = (descBlock || "")
+        const descBlock = $(el).parent().nextAll("i").first().parent().html() || "";
+        const cleanDesc = descBlock
             .replace(/<[^>]+>/g, "")
             .replace(/\n/g, " ")
             .trim();
@@ -40,48 +52,58 @@ async function scrapeBlog(fullUrl) {
         episodes.push({
             id: i + 1,
             title: title || `Episódio ${i + 1}`,
-            video: encodedVideo,
-            description: cleanDesc || ""
+            video: encodeTemp(video, 10),
+            description: cleanDesc
         });
     });
 
     return episodes;
 }
 
-// === ROTA: /traslink/:server/:conteudo ===
-app.get("/traslink/:server/:conteudo", async (req, res) => {
-    const { server, conteudo } = req.params;
+// ========================================================
+// 🚀 API EXPRESS
+// ========================================================
+const app = express();
+app.use(cors());
+app.use(express.json());
 
+// ========================================================
+// 📌  ENDPOINT: /get/:server/:anime
+// Busca o link no Firebase, faz scraping e retorna JSON
+// ========================================================
+app.get("/get/:server/:anime", async (req, res) => {
     try {
-        // 1. Carrega lista de servidores do Firebase
-        const snap = await db.ref(`servers/${server}`).once("value");
-        if (!snap.exists()) return res.status(404).json({ error: "Servidor não encontrado" });
+        const { server, anime } = req.params;
+        const ref = db.ref(`servers/${server}/conteudo/${anime}`);
 
-        const srv = snap.val();
+        const snapshot = await ref.get();
 
-        // 2. Pega link do conteúdo
-        const page = srv.conteudo[conteudo];
-        if (!page) return res.status(404).json({ error: "Conteúdo não encontrado" });
+        if (!snapshot.exists()) {
+            return res.status(404).json({ error: "Registro não encontrado" });
+        }
 
-        // 3. Monta o link real
-        const fullUrl = `${srv.link}/${page}`;
+        const blogPath = snapshot.val(); // exemplo: 2025/12/blog-post_797.html
+        const serverBase = (await db.ref(`servers/${server}/link`).get()).val();
 
-        // 4. Faz scraper + codificação
-        const episodes = await scrapeBlog(fullUrl);
+        const fullUrl = `${serverBase}/${blogPath}`;
 
-        // 5. Retorna JSON final
+        console.log("🔍 Scraping:", fullUrl);
+
+        const episodes = await extractVideos(fullUrl);
+
         res.json({
-            server,
-            conteudo,
+            anime,
             total: episodes.length,
             episodes
         });
 
-    } catch (e) {
-        console.error("Erro:", e);
-        res.status(500).json({ error: "Erro interno" });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Erro interno no servidor" });
     }
 });
 
-// === START SERVER ===
-app.listen(3000, () => console.log("API rodando na porta 3000"));
+// ========================================================
+app.listen(process.env.PORT || 3000, () =>
+    console.log("🔥 API rodando na porta", process.env.PORT || 3000)
+);
