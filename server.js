@@ -56,6 +56,7 @@ async function extractVideos(blogUrl) {
                 .text()
                 .replace(/^Descrição:\s*/i, "")
                 .trim() || "";
+        console.log("DESC:", description);
 
         episodes.push({
             id: index + 1,
