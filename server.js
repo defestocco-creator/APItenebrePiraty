@@ -1,4 +1,3 @@
-import express from "express";
 import cors from "cors";
 import axios from "axios";
 import * as cheerio from "cheerio";
@@ -40,31 +39,17 @@ async function extractVideos(blogUrl) {
     const $ = cheerio.load(data);
     const episodes = [];
 
-    $(".post-body object.BLOG_video_class").each((index, el) => {
+    $(".post-body iframe").each((index, el) => {
+        const iframe = $(el);
 
-        const video =
-            $(el).attr("data") ||
-            $(el).attr("src") ||
-            "";
+        const video = iframe.attr("src") || "";
 
-        const title = $(el)
-            .nextAll("b")
-            .first()
-            .text()
-            .trim() || `Episódio ${index + 1}`;
+        const title =
+            iframe.nextAll("b").first().text().trim() ||
+            `Episódio ${index + 1}`;
 
-        let description = $(el)
-            .nextAll("i")
-            .first()
-            .text()
-            .trim();
-
-        description = description
-            .replace(/^descrição:\s*/i, "")
-            .replace(/^título:\s*/i, "")
-            .replace(/^["“]|["”]$/g, "")
-            .trim();
-
+        const description =
+            iframe.nextAll("i").first().text().trim() || "";
         console.log("DESC:", description);
 
         episodes.push({
