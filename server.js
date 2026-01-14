@@ -40,17 +40,31 @@ async function extractVideos(blogUrl) {
     const $ = cheerio.load(data);
     const episodes = [];
 
-    $(".post-body iframe").each((index, el) => {
-        const iframe = $(el);
+    $(".post-body object.BLOG_video_class").each((index, el) => {
 
-        const video = iframe.attr("src") || "";
+        const video =
+            $(el).attr("data") ||
+            $(el).attr("src") ||
+            "";
 
-        const title =
-            iframe.nextAll("b").first().text().trim() ||
-            `Episódio ${index + 1}`;
+        const title = $(el)
+            .nextAll("b")
+            .first()
+            .text()
+            .trim() || `Episódio ${index + 1}`;
 
-        const description =
-            iframe.nextAll("i").first().text().trim() || "";
+        let description = $(el)
+            .nextAll("i")
+            .first()
+            .text()
+            .trim();
+
+        description = description
+            .replace(/^descrição:\s*/i, "")
+            .replace(/^título:\s*/i, "")
+            .replace(/^["“]|["”]$/g, "")
+            .trim();
+
         console.log("DESC:", description);
 
         episodes.push({
