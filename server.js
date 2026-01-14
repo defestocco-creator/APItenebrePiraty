@@ -22,16 +22,15 @@ admin.initializeApp({
 const db = admin.database();
 
 // ========================================================
-// ⏳ ENCODE TEMPORÁRIO (expira)
+// ⏳ TOKEN TEMPORÁRIO DE VÍDEO
 // ========================================================
 function encodeTemp(str, minutos = 10) {
     const expires = Date.now() + minutos * 60 * 1000;
-    const payload = `${str}::${expires}`;
-    return Buffer.from(payload, "utf8").toString("base64");
+    return Buffer.from(`${str}::${expires}`, "utf8").toString("base64");
 }
 
 // ========================================================
-// 🔍 SCRAPING DOS VÍDEOS
+// 🔍 SCRAPING CORRETO (DESCRIÇÃO POR EPISÓDIO)
 // ========================================================
 async function extractVideos(blogUrl) {
     const { data } = await axios.get(blogUrl, {
@@ -41,26 +40,23 @@ async function extractVideos(blogUrl) {
     const $ = cheerio.load(data);
     const episodes = [];
 
-    $(".post-body iframe").each((i, el) => {
-        const video = $(el).attr("src") || "";
+    $(".post-body iframe").each((index, el) => {
+        const iframe = $(el);
+
+        const video = iframe.attr("src") || "";
 
         const title =
-            $(el).parent().next("b").text().trim() ||
-            `Episódio ${i + 1}`;
+            iframe.nextAll("b").first().text().trim() ||
+            `Episódio ${index + 1}`;
 
-        const descHtml =
-            $(el).parent().nextAll("i").first().parent().html() || "";
-
-        const description = descHtml
-            .replace(/<[^>]+>/g, "")
-            .replace(/\s+/g, " ")
-            .trim();
+        const description =
+            iframe.nextAll("i").first().text().trim() || "";
 
         episodes.push({
-            id: i + 1,
+            id: index + 1,
             title,
-            video: encodeTemp(video),
-            description
+            description,
+            video: encodeTemp(video)
         });
     });
 
@@ -68,23 +64,23 @@ async function extractVideos(blogUrl) {
 }
 
 // ========================================================
-// 🚀 API EXPRESS
+// 🚀 EXPRESS
 // ========================================================
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 // ========================================================
-// 📌 ENDPOINT CORRIGIDO
-// GET /get/:server/:anime
+// 📌 GET /get/:server/:anime
 // ========================================================
 app.get("/get/:server/:anime", async (req, res) => {
     try {
         const { server, anime } = req.params;
 
-        // 🔹 Busca OBRA
-        const obraRef = db.ref(`servers/${server}/catalogo/${anime}/obra`);
-        const obraSnap = await obraRef.get();
+        // 🔹 OBRA
+        const obraSnap = await db
+            .ref(`servers/${server}/catalogo/${anime}/obra`)
+            .get();
 
         if (!obraSnap.exists()) {
             return res.status(404).json({ error: "Anime não encontrado" });
@@ -92,18 +88,20 @@ app.get("/get/:server/:anime", async (req, res) => {
 
         const obra = obraSnap.val();
 
-        // 🔹 Base do blog
-        const linkSnap = await db.ref(`servers/${server}/link`).get();
-        const serverBase = linkSnap.val();
+        // 🔹 LINK BASE
+        const linkSnap = await db
+            .ref(`servers/${server}/link`)
+            .get();
 
-        if (!serverBase || !obra.temporada1) {
-            return res.status(500).json({ error: "Link inválido no Firebase" });
+        const baseUrl = linkSnap.val();
+
+        if (!baseUrl || !obra.temporada1) {
+            return res.status(500).json({ error: "Configuração inválida no Firebase" });
         }
 
-        const fullUrl = `${serverBase}/${obra.temporada1}`;
+        const fullUrl = `${baseUrl}/${obra.temporada1}`;
         console.log("🔍 Scraping:", fullUrl);
 
-        // 🔹 Scraping
         const episodes = await extractVideos(fullUrl);
 
         res.json({
@@ -111,18 +109,19 @@ app.get("/get/:server/:anime", async (req, res) => {
             anime,
             titulo: obra.titulo,
             sinopse: obra.sinopse,
+            capa: obra.capa,
             quantidadeEps: obra.quantidadeEps,
             totalScraped: episodes.length,
             episodes
         });
 
     } catch (err) {
-        console.error("❌ ERRO:", err.message);
-        res.status(500).json({ error: "Erro interno no servidor" });
+        console.error("❌ ERRO:", err);
+        res.status(500).json({ error: "Erro interno" });
     }
 });
 
 // ========================================================
-app.listen(process.env.PORT || 3000, () =>
-    console.log("🔥 API rodando na porta", process.env.PORT || 3000)
-);
+app.listen(process.env.PORT || 3000, () => {
+    console.log("🔥 API rodando na porta", process.env.PORT || 3000);
+});
