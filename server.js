@@ -49,8 +49,12 @@ async function extractVideos(blogUrl) {
             iframe.nextAll("b").first().text().trim() ||
             `Episódio ${index + 1}`;
 
-        const description =
-            iframe.nextAll("i").first().text().trim() || "";
+        const description = titleEl
+            .nextAll("i")
+            .first()
+            .text()
+            .replace(/^Título:\s*/i, "")
+            .trim();
 
         episodes.push({
             id: index + 1,
