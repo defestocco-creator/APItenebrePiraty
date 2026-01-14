@@ -49,12 +49,13 @@ async function extractVideos(blogUrl) {
             iframe.nextAll("b").first().text().trim() ||
             `Episódio ${index + 1}`;
 
-        const description = titleEl
-            .nextAll("i")
-            .first()
-            .text()
-            .replace(/^Título:\s*/i, "")
-            .trim();
+        const description =
+            iframe
+                .nextAll("i")
+                .first()
+                .text()
+                .replace(/^Descrição:\s*/i, "")
+                .trim() || "";
 
         episodes.push({
             id: index + 1,
@@ -66,7 +67,6 @@ async function extractVideos(blogUrl) {
 
     return episodes;
 }
-
 // ========================================================
 // 🚀 EXPRESS
 // ========================================================
