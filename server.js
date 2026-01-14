@@ -8,7 +8,7 @@ import admin from "firebase-admin";
 dotenv.config();
 
 // ========================================================
-// 🔥  FIREBASE ADMIN (SERVIDOR)
+// 🔥 FIREBASE ADMIN
 // ========================================================
 admin.initializeApp({
     credential: admin.credential.cert({
@@ -22,7 +22,7 @@ admin.initializeApp({
 const db = admin.database();
 
 // ========================================================
-// ⏳ ENCODING TEMPORÁRIO (expira automaticamente)
+// ⏳ ENCODE TEMPORÁRIO (expira)
 // ========================================================
 function encodeTemp(str, minutos = 10) {
     const expires = Date.now() + minutos * 60 * 1000;
@@ -31,29 +31,36 @@ function encodeTemp(str, minutos = 10) {
 }
 
 // ========================================================
-// 🔍 Função que faz scraping automático dos vídeos
+// 🔍 SCRAPING DOS VÍDEOS
 // ========================================================
 async function extractVideos(blogUrl) {
-    const { data } = await axios.get(blogUrl);
-    const $ = cheerio.load(data);
+    const { data } = await axios.get(blogUrl, {
+        headers: { "User-Agent": "Mozilla/5.0" }
+    });
 
+    const $ = cheerio.load(data);
     const episodes = [];
 
     $(".post-body iframe").each((i, el) => {
         const video = $(el).attr("src") || "";
-        const title = $(el).parent().next("b").text().trim();
 
-        const descBlock = $(el).parent().nextAll("i").first().parent().html() || "";
-        const cleanDesc = descBlock
+        const title =
+            $(el).parent().next("b").text().trim() ||
+            `Episódio ${i + 1}`;
+
+        const descHtml =
+            $(el).parent().nextAll("i").first().parent().html() || "";
+
+        const description = descHtml
             .replace(/<[^>]+>/g, "")
-            .replace(/\n/g, " ")
+            .replace(/\s+/g, " ")
             .trim();
 
         episodes.push({
             id: i + 1,
-            title: title || `Episódio ${i + 1}`,
-            video: encodeTemp(video, 10),
-            description: cleanDesc
+            title,
+            video: encodeTemp(video),
+            description
         });
     });
 
@@ -68,37 +75,49 @@ app.use(cors());
 app.use(express.json());
 
 // ========================================================
-// 📌  ENDPOINT: /get/:server/:anime
-// Busca o link no Firebase, faz scraping e retorna JSON
+// 📌 ENDPOINT CORRIGIDO
+// GET /get/:server/:anime
 // ========================================================
 app.get("/get/:server/:anime", async (req, res) => {
     try {
         const { server, anime } = req.params;
-        const ref = db.ref(`servers/${server}/conteudo/${anime}`);
 
-        const snapshot = await ref.get();
+        // 🔹 Busca OBRA
+        const obraRef = db.ref(`servers/${server}/catalogo/${anime}/obra`);
+        const obraSnap = await obraRef.get();
 
-        if (!snapshot.exists()) {
-            return res.status(404).json({ error: "Registro não encontrado" });
+        if (!obraSnap.exists()) {
+            return res.status(404).json({ error: "Anime não encontrado" });
         }
 
-        const blogPath = snapshot.val(); // exemplo: 2025/12/blog-post_797.html
-        const serverBase = (await db.ref(`servers/${server}/link`).get()).val();
+        const obra = obraSnap.val();
 
-        const fullUrl = `${serverBase}/${blogPath}`;
+        // 🔹 Base do blog
+        const linkSnap = await db.ref(`servers/${server}/link`).get();
+        const serverBase = linkSnap.val();
 
+        if (!serverBase || !obra.temporada1) {
+            return res.status(500).json({ error: "Link inválido no Firebase" });
+        }
+
+        const fullUrl = `${serverBase}/${obra.temporada1}`;
         console.log("🔍 Scraping:", fullUrl);
 
+        // 🔹 Scraping
         const episodes = await extractVideos(fullUrl);
 
         res.json({
+            server,
             anime,
-            total: episodes.length,
+            titulo: obra.titulo,
+            sinopse: obra.sinopse,
+            quantidadeEps: obra.quantidadeEps,
+            totalScraped: episodes.length,
             episodes
         });
 
     } catch (err) {
-        console.error(err);
+        console.error("❌ ERRO:", err.message);
         res.status(500).json({ error: "Erro interno no servidor" });
     }
 });
