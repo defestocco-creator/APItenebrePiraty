@@ -231,7 +231,7 @@ app.get("/preview/:server/:anime", auth, async (req, res) => {
         res.json({
             server,
             anime,
-            titulo: data.Titulo || data.titulo || null,
+            titulo: data.Titulo || null,
             sinopse: data.sinopse || null,
             capa: data.Capa || null,
             generos,
