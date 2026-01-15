@@ -163,7 +163,7 @@ app.get("/preview/:server", async (req, res) => {
                 titulo: obra.titulo || "",
                 capa: obra.Capa || null,
                 tipo: obra.tipo || null,
-                destaque: !!obra.destaque,
+                destaque: !!obra.Destaque,
                 generos: obra.genero
                     ? Object.values(obra.genero).filter(Boolean)
                     : []
@@ -179,7 +179,7 @@ app.get("/preview/:server", async (req, res) => {
                 }
 
                 if (destaque === "true") {
-                    if (!obra.destaque) return false;
+                    if (!obra.Destaque) return false;
                 }
 
                 if (genero) {
@@ -210,7 +210,7 @@ app.get("/preview/:server", async (req, res) => {
 // os dados scrapped (episódios). A ideia é minimizar o
 // carregamento inicial, retornando apenas informações básicas
 // como título, sinopse, gêneros e capa.
-app.get("/preview/:server/:anime ", auth, async (req, res) => {
+app.get("/preview/:server/:anime", auth, async (req, res) => {
     try {
         const { server, anime } = req.params;
 
