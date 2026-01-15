@@ -89,6 +89,13 @@ app.get("/get/:server/:anime", async (req, res) => {
 
         const obra = obraSnap.val();
 
+        // 🔹 GÊNEROS
+        const generoSnap = await db
+            .ref(`servers/${server}/catalogo/${anime}/genero`)
+            .get();
+
+        const generos = generoSnap.exists() ? Object.values(generoSnap.val()) : [];
+
         // 🔹 LINK BASE
         const linkSnap = await db
             .ref(`servers/${server}/link`)
@@ -112,6 +119,7 @@ app.get("/get/:server/:anime", async (req, res) => {
             sinopse: obra.sinopse,
             capa: obra.capa,
             quantidadeEps: obra.quantidadeEps,
+            generos,              // ✅ Adicionado aqui
             totalScraped: episodes.length,
             episodes
         });
