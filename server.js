@@ -233,7 +233,7 @@ app.get("/preview/:server/:anime", auth, async (req, res) => {
             anime,
             titulo: data.Titulo || data.titulo || null,
             sinopse: data.sinopse || null,
-            capa: data.Capa || data.obra?.capa || null,
+            capa: data.Capa || null,
             generos,
             destaque: data.Destaque || false
         });
