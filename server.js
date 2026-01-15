@@ -139,46 +139,68 @@ function auth(req, res, next) {
 // Esta rota retorna todas as obras que possuem "Destaque: true".
 // Serve para montar telas iniciais (home/vitrine) sem executar
 // scraping, reduzindo custo e tempo de carregamento.
-app.get("/preview/:server", auth, async (req, res) => {
+// ========================================================
+// 📚 PREVIEW COM FILTRO (NOME / GENERO / TIPO / DESTAQUE)
+// ========================================================
+app.get("/preview/:server", async (req, res) => {
     try {
         const { server } = req.params;
+        const { q, genero, tipo, destaque } = req.query;
 
-        const catalogoSnap = await db
+        const snap = await db
             .ref(`servers/${server}/catalogo`)
             .get();
 
-        if (!catalogoSnap.exists()) {
-            return res.status(404).json({ error: "Catálogo não encontrado" });
+        if (!snap.exists()) {
+            return res.json([]);
         }
 
-        const catalogo = catalogoSnap.val();
-        const destaques = [];
+        const catalogo = snap.val();
 
-        for (const [anime, data] of Object.entries(catalogo)) {
-            if (data.Destaque === true) {
-                destaques.push({
-                    anime,
-                    titulo: data.Titulo || data.titulo || null,
-                    sinopse: data.sinopse || null,
-                    capa: data.Capa || data.obra?.capa || null,
-                    generos: data.genero
-                        ? Object.values(data.genero).filter(Boolean)
-                        : []
-                });
-            }
-        }
+        const resultado = Object.entries(catalogo)
+            .map(([key, obra]) => ({
+                id: key,
+                titulo: obra.titulo || "",
+                capa: obra.Capa || null,
+                tipo: obra.tipo || null,
+                destaque: !!obra.destaque,
+                generos: obra.genero
+                    ? Object.values(obra.genero).filter(Boolean)
+                    : []
+            }))
+            .filter(obra => {
+                if (q) {
+                    const nome = obra.titulo.toLowerCase();
+                    if (!nome.includes(q.toLowerCase())) return false;
+                }
 
-        res.json({
-            server,
-            total: destaques.length,
-            obras: destaques
-        });
+                if (tipo) {
+                    if (obra.tipo !== tipo) return false;
+                }
+
+                if (destaque === "true") {
+                    if (!obra.destaque) return false;
+                }
+
+                if (genero) {
+                    const gen = genero.toLowerCase();
+                    const match = obra.generos.some(g =>
+                        g.toLowerCase().includes(gen)
+                    );
+                    if (!match) return false;
+                }
+
+                return true;
+            });
+
+        res.json(resultado);
 
     } catch (err) {
-        console.error("❌ PREVIEW DESTAQUES ERRO:", err);
-        res.status(500).json({ error: "Erro ao carregar destaques" });
+        console.error("❌ PREVIEW ERRO:", err);
+        res.status(500).json({ error: "Erro no preview" });
     }
 });
+
 
 
 // ========================================================
@@ -188,7 +210,7 @@ app.get("/preview/:server", auth, async (req, res) => {
 // os dados scrapped (episódios). A ideia é minimizar o
 // carregamento inicial, retornando apenas informações básicas
 // como título, sinopse, gêneros e capa.
-app.get("/preview/:server/:anime", auth, async (req, res) => {
+app.get("/preview/:server/:anime ", auth, async (req, res) => {
     try {
         const { server, anime } = req.params;
 
