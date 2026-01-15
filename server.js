@@ -4,7 +4,7 @@ import axios from "axios";
 import * as cheerio from "cheerio";
 import dotenv from "dotenv";
 import admin from "firebase-admin";
-
+import jwt from "jsonwebtoken";
 
 dotenv.config();
 
@@ -52,7 +52,6 @@ async function extractVideos(blogUrl) {
 
         const description =
             iframe.nextAll("i").first().text().trim() || "";
-        console.log("DESC:", description);
 
         episodes.push({
             id: index + 1,
@@ -64,6 +63,7 @@ async function extractVideos(blogUrl) {
 
     return episodes;
 }
+
 // ========================================================
 // 🚀 EXPRESS
 // ========================================================
@@ -72,13 +72,73 @@ app.use(cors());
 app.use(express.json());
 
 // ========================================================
-// 📌 GET /get/:server/:anime
+// 🔐 LOGIN
 // ========================================================
-app.get("/get/:server/:anime", async (req, res) => {
+app.post("/login", async (req, res) => {
+    try {
+        const { user, acesso } = req.body;
+
+        if (!user || !acesso) {
+            return res.status(400).json({ error: "Dados inválidos" });
+        }
+
+        const userSnap = await db.ref(`users/${user}`).get();
+
+        if (!userSnap.exists()) {
+            return res.status(401).json({ error: "Usuário não existe" });
+        }
+
+        const userData = userSnap.val();
+
+        if (userData.acesso !== acesso) {
+            return res.status(401).json({ error: "Acesso inválido" });
+        }
+
+        const token = jwt.sign(
+            { user },
+            process.env.JWT_SECRET,
+            { expiresIn: process.env.JWT_EXPIRES || "2h" }
+        );
+
+        res.json({
+            token,
+            user
+        });
+
+    } catch (err) {
+        console.error("❌ LOGIN ERRO:", err);
+        res.status(500).json({ error: "Erro no login" });
+    }
+});
+
+// ========================================================
+// 🛡️ AUTH MIDDLEWARE
+// ========================================================
+function auth(req, res, next) {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader) {
+        return res.status(401).json({ error: "Token não enviado" });
+    }
+
+    const [, token] = authHeader.split(" ");
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = decoded;
+        next();
+    } catch {
+        return res.status(401).json({ error: "Token inválido ou expirado" });
+    }
+}
+
+// ========================================================
+// 📌 GET /get/:server/:anime (PROTEGIDO)
+// ========================================================
+app.get("/get/:server/:anime", auth, async (req, res) => {
     try {
         const { server, anime } = req.params;
 
-        // 🔹 OBRA
         const obraSnap = await db
             .ref(`servers/${server}/catalogo/${anime}/obra`)
             .get();
@@ -89,14 +149,14 @@ app.get("/get/:server/:anime", async (req, res) => {
 
         const obra = obraSnap.val();
 
-        // 🔹 GÊNEROS
         const generoSnap = await db
             .ref(`servers/${server}/catalogo/${anime}/genero`)
             .get();
 
-        const generos = generoSnap.exists() ? Object.values(generoSnap.val()) : [];
+        const generos = generoSnap.exists()
+            ? Object.values(generoSnap.val()).filter(Boolean)
+            : [];
 
-        // 🔹 LINK BASE
         const linkSnap = await db
             .ref(`servers/${server}/link`)
             .get();
@@ -108,7 +168,6 @@ app.get("/get/:server/:anime", async (req, res) => {
         }
 
         const fullUrl = `${baseUrl}/${obra.temporada1}`;
-        console.log("🔍 Scraping:", fullUrl);
 
         const episodes = await extractVideos(fullUrl);
 
@@ -119,7 +178,7 @@ app.get("/get/:server/:anime", async (req, res) => {
             sinopse: obra.sinopse,
             capa: obra.capa,
             quantidadeEps: obra.quantidadeEps,
-            generos,              // ✅ Adicionado aqui
+            generos,
             totalScraped: episodes.length,
             episodes
         });
