@@ -132,6 +132,96 @@ function auth(req, res, next) {
     }
 }
 
+
+// ========================================================
+// ⭐ GET /preview/:server (OBRAS EM DESTAQUE)
+// ========================================================
+// Esta rota retorna todas as obras que possuem "Destaque: true".
+// Serve para montar telas iniciais (home/vitrine) sem executar
+// scraping, reduzindo custo e tempo de carregamento.
+app.get("/preview/:server", auth, async (req, res) => {
+    try {
+        const { server } = req.params;
+
+        const catalogoSnap = await db
+            .ref(`servers/${server}/catalogo`)
+            .get();
+
+        if (!catalogoSnap.exists()) {
+            return res.status(404).json({ error: "Catálogo não encontrado" });
+        }
+
+        const catalogo = catalogoSnap.val();
+        const destaques = [];
+
+        for (const [anime, data] of Object.entries(catalogo)) {
+            if (data.Destaque === true) {
+                destaques.push({
+                    anime,
+                    titulo: data.Titulo || data.titulo || null,
+                    sinopse: data.sinopse || null,
+                    capa: data.Capa || data.obra?.capa || null,
+                    generos: data.genero
+                        ? Object.values(data.genero).filter(Boolean)
+                        : []
+                });
+            }
+        }
+
+        res.json({
+            server,
+            total: destaques.length,
+            obras: destaques
+        });
+
+    } catch (err) {
+        console.error("❌ PREVIEW DESTAQUES ERRO:", err);
+        res.status(500).json({ error: "Erro ao carregar destaques" });
+    }
+});
+
+
+// ========================================================
+// 👀 GET /preview/:server/:anime (PREVIEW LEVE)
+// ========================================================
+// Esta rota serve para um preview das obras antes de carregar
+// os dados scrapped (episódios). A ideia é minimizar o
+// carregamento inicial, retornando apenas informações básicas
+// como título, sinopse, gêneros e capa.
+app.get("/preview/:server/:anime", auth, async (req, res) => {
+    try {
+        const { server, anime } = req.params;
+
+        const animeSnap = await db
+            .ref(`servers/${server}/catalogo/${anime}`)
+            .get();
+
+        if (!animeSnap.exists()) {
+            return res.status(404).json({ error: "Anime não encontrado" });
+        }
+
+        const data = animeSnap.val();
+
+        const generos = data.genero
+            ? Object.values(data.genero).filter(Boolean)
+            : [];
+
+        res.json({
+            server,
+            anime,
+            titulo: data.Titulo || data.titulo || null,
+            sinopse: data.sinopse || null,
+            capa: data.Capa || data.obra?.capa || null,
+            generos,
+            destaque: data.Destaque || false
+        });
+
+    } catch (err) {
+        console.error("❌ PREVIEW ERRO:", err);
+        res.status(500).json({ error: "Erro ao carregar preview" });
+    }
+});
+
 // ========================================================
 // 📌 GET /get/:server/:anime (PROTEGIDO)
 // ========================================================
