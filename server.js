@@ -132,6 +132,28 @@ function auth(req, res, next) {
     }
 }
 
+//anuncio//
+
+app.get("/announcements/:posicao", async (req, res) => {
+  const { posicao } = req.params;
+
+  const snap = await db.ref("announcements").get();
+  if (!snap.exists()) return res.json([]);
+
+  const hoje = new Date().toISOString().split("T")[0];
+
+  const ativos = Object.values(snap.val())
+    .filter(a =>
+      a.ativo &&
+      a.posicao === posicao &&
+      (!a.inicio || a.inicio <= hoje) &&
+      (!a.fim || a.fim >= hoje)
+    )
+    .sort((a, b) => (a.prioridade ?? 99) - (b.prioridade ?? 99));
+
+  res.json(ativos);
+});
+
 
 // ========================================================
 // ⭐ GET /preview/:server (OBRAS EM DESTAQUE)
